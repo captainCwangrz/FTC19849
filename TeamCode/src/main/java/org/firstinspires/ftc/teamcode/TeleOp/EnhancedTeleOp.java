@@ -1,16 +1,18 @@
 package org.firstinspires.ftc.teamcode.TeleOp;
 
+import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.teamcode.Autonomous.MotorControlHelper;
 
+@Config
 @TeleOp(name = "EnhancedTeleOp", group = "Enhanced")
 public class EnhancedTeleOp extends LinearOpMode
 {
@@ -40,6 +42,10 @@ public class EnhancedTeleOp extends LinearOpMode
     ElapsedTime timer = new ElapsedTime();
 
     double maxTicksPerSecond;
+
+    MotorControlHelper helper;
+    public static double HEADING = 0.0;
+    public static double DISTANCE = 1.5;
 
     @Override
     public void runOpMode()
@@ -90,7 +96,12 @@ public class EnhancedTeleOp extends LinearOpMode
         telemetry.addData("Status", "IMU Initialized");
         telemetry.update();
 
+        helper = new MotorControlHelper(lf, rf, lb, rb);
+        telemetry.addData("Status", "Helper initialized");
+        telemetry.update();
         waitForStart();
+
+        helper.translate(HEADING, DISTANCE);
 
         timer.reset();
 
@@ -211,20 +222,17 @@ public class EnhancedTeleOp extends LinearOpMode
                 rb.setPower(rbOutput);
             }
 
-            PIDFCoefficients coefficients = lf.getPIDFCoefficients(DcMotorEx.RunMode.RUN_USING_ENCODER);
-
+            /*
             telemetry.addData("Dead Zone", INPUT_DEADZONE_ON);
             telemetry.addData("Input Scaling", INPUT_SCALING_ON);
             telemetry.addData("Input Smoothing", INPUT_SMOOTHING_ON);
             telemetry.addData("Field Centric", FIELD_CENTRIC_ON);
             telemetry.addData("PIDF", PIDF_ON);
             telemetry.addData("Accel Limiting", ACCEL_LIMITING_ON);
-            telemetry.addData("Kp", coefficients.p);
-            telemetry.addData("Ki", coefficients.i);
-            telemetry.addData("Kd", coefficients.d);
-            telemetry.addData("Kf", coefficients.f);
             telemetry.update();
+             */
         }
+
     }
 
     private double applyDeadzone(double input)
