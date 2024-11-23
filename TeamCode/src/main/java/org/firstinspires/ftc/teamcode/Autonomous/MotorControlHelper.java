@@ -2,58 +2,71 @@ package org.firstinspires.ftc.teamcode.Autonomous;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.PIDFCoefficients;
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 
 @Config
 public class MotorControlHelper
 {
+    LinearOpMode opMode;
     DcMotorEx lf, rf, lb, rb;
+    IMU imu;
+
+    FtcDashboard dashboard;
+    Telemetry dashboardTelemetry;
+
+    PIDFController lfPIDF, rfPIDF, lbPIDF, rbPIDF;
+    PIDFController headingPIDF;
+
+    ElapsedTime timer = new ElapsedTime();
 
     public static double TICKS_PER_REV = 537.7;
     public static double WHEEL_DIAMETER = 0.1;
     public static double WHEELBASE_LENGTH = 0.295;
     public static double WHEELBASE_WIDTH = 0.38;
-
     public static double WHEEL_CIRCUMFERENCE = Math.PI * WHEEL_DIAMETER;
     public static double r = Math.hypot(WHEELBASE_LENGTH / 2.0, WHEELBASE_WIDTH / 2.0);
 
     public static double MAX_POWER = 0.3;
+    public static double MAX_VELOCITY_TICKS = 2376.63;
+    public static double MAX_ACCELERATION_TICKS = 2000;
 
-    public static int P = 3;
-    public static int I = 0;
-    public static int D = 0;
-    public static int F = 0;
-
-    FtcDashboard dashboard;
-    Telemetry dashboardTelemetry;
-
-    public MotorControlHelper(DcMotorEx lf, DcMotorEx rf, DcMotorEx lb, DcMotorEx rb)
+    public MotorControlHelper(LinearOpMode opMode)
     {
-        this.lf = lf;
-        this.rf = rf;
-        this.lb = lb;
-        this.rb = rb;
+        this.opMode = opMode;
 
-        PIDFCoefficients pidfCoefficients = new PIDFCoefficients(P, I, D, F);
-        lf.setPIDFCoefficients(DcMotorEx.RunMode.RUN_TO_POSITION, pidfCoefficients);
-        rf.setPIDFCoefficients(DcMotorEx.RunMode.RUN_TO_POSITION, pidfCoefficients);
-        lb.setPIDFCoefficients(DcMotorEx.RunMode.RUN_TO_POSITION, pidfCoefficients);
-        rb.setPIDFCoefficients(DcMotorEx.RunMode.RUN_TO_POSITION, pidfCoefficients);
+        this.lf = opMode.hardwareMap.get(DcMotorEx.class, "lf");
+        this.rf = opMode.hardwareMap.get(DcMotorEx.class, "rf");
+        this.lb = opMode.hardwareMap.get(DcMotorEx.class, "lb");
+        this.rb = opMode.hardwareMap.get(DcMotorEx.class, "rb");
 
-        PIDFCoefficients activeCoefficients = lf.getPIDFCoefficients(DcMotorEx.RunMode.RUN_TO_POSITION);
+        this.imu = opMode.hardwareMap.get(IMU.class, "imu");
+
+        double motorKp = 1.4;
+        double motorKi = 0.0;
+        double motorKd = 0.0;
+        double motorKf = 0.0;
+        lfPIDF = new PIDFController(motorKp, motorKi, motorKd, motorKf);
+        rfPIDF = new PIDFController(motorKp, motorKi, motorKd, motorKf);
+        lbPIDF = new PIDFController(motorKp, motorKi, motorKd, motorKf);
+        rbPIDF = new PIDFController(motorKp, motorKi, motorKd, motorKf);
+
+        double headingKp = 0.5;
+        double headingKi = 0.0;
+        double headingKd = 0.0;
+        double headingKf = 0.0;
+        headingPIDF = new PIDFController(headingKp, headingKi, headingKd, headingKf);
+
         dashboard = FtcDashboard.getInstance();
         dashboardTelemetry = dashboard.getTelemetry();
         dashboardTelemetry.addData("FL Power", 0);
         dashboardTelemetry.addData("FR Power", 0);
         dashboardTelemetry.addData("BL Power", 0);
         dashboardTelemetry.addData("BR Power", 0);
-        dashboardTelemetry.addData("P", activeCoefficients.p);
-        dashboardTelemetry.addData("I", activeCoefficients.i);
-        dashboardTelemetry.addData("D", activeCoefficients.d);
-        dashboardTelemetry.addData("F", activeCoefficients.f);
         dashboardTelemetry.update();
 
         resetEncoders();
@@ -106,50 +119,59 @@ public class MotorControlHelper
         setMotorPower(0, 0, 0, 0);
     }
 
-    public void translate(double headingDegrees, double distanceMeters)
+    public void translate(double heading, double distance, double temp)
     {
-        double headingRadians = Math.toRadians(headingDegrees);
+        move(heading, distance, 0.0);
+    }
 
-        double Vx = distanceMeters * Math.sin(headingRadians);
-        double Vy = distanceMeters * Math.cos(headingRadians);
-        double omega = 0; //ro rotation
+    public void rotate(double angle, double temp)
+    {
+        move(0.0, 0.0, angle);
+    }
 
-        double lfDistance = Vy + Vx + omega * r;
-        double rfDistance = Vy - Vx - omega * r;
-        double lbDistance = Vy - Vx + omega * r;
-        double rbDistance = Vy + Vx - omega * r;
+    private void move(double heading, double distance, double angle)
+    {
+        int lfTarget, rfTarget, lbTarget, rbTarget;
+        double headingRad = Math.toRadians(heading);
 
-        double lfRotations = lfDistance / WHEEL_CIRCUMFERENCE;
-        double rfRotations = rfDistance / WHEEL_CIRCUMFERENCE;
-        double lbRotations = lbDistance / WHEEL_CIRCUMFERENCE;
-        double rbRotations = rbDistance / WHEEL_CIRCUMFERENCE;
+        double vy = Math.cos(headingRad) * distance;
+        double vx = Math.sin(headingRad) * distance;
+        double omega = Math.toRadians(angle);
 
-        int lfTicks = (int) Math.round(lfRotations * TICKS_PER_REV);
-        int lbTicks = (int) Math.round(lbRotations * TICKS_PER_REV);
-        int rfTicks = (int) Math.round(rfRotations * TICKS_PER_REV);
-        int rbTicks = (int) Math.round(rbRotations * TICKS_PER_REV);
+        double lfDistance = vy + vx + omega * r;
+        double rfDistance = vy - vx - omega * r;
+        double lbDistance = vy - vx + omega * r;
+        double rbDistance = vy + vx - omega * r;
 
-        lf.setTargetPosition(lf.getCurrentPosition() + lfTicks);
-        rf.setTargetPosition(rf.getCurrentPosition() + rfTicks);
-        lb.setTargetPosition(lb.getCurrentPosition() + lbTicks);
-        rb.setTargetPosition(rb.getCurrentPosition() + rbTicks);
+        lfTarget = lf.getCurrentPosition() + (int) (lfDistance / WHEEL_CIRCUMFERENCE * TICKS_PER_REV);
+        rfTarget = rf.getCurrentPosition() + (int) (rfDistance / WHEEL_CIRCUMFERENCE * TICKS_PER_REV);
+        lbTarget = lb.getCurrentPosition() + (int) (lbDistance / WHEEL_CIRCUMFERENCE * TICKS_PER_REV);
+        rbTarget = rb.getCurrentPosition() + (int) (rbDistance / WHEEL_CIRCUMFERENCE * TICKS_PER_REV);
+
+        lf.setTargetPosition(lfTarget);
+        rf.setTargetPosition(rfTarget);
+        lb.setTargetPosition(lbTarget);
+        rb.setTargetPosition(rbTarget);
 
         setRunToPositionMode();
 
-        double maxTicks = Math.max(Math.max(Math.abs(lfTicks), Math.abs(rfTicks)), Math.max(Math.abs(lbTicks), Math.abs(rbTicks)));
-        if (maxTicks > 0 )
+        setMotorPower(1.0, 1.0, 1.0, 1.0);
+
+        timer.reset();
+
+        while (opMode.opModeIsActive() && motorsAreBusy())
         {
-            double lfPower = MAX_POWER * lfTicks / maxTicks;
-            double rfPower = MAX_POWER * rfTicks / maxTicks;
-            double lbPower = MAX_POWER * lbTicks / maxTicks;
-            double rbPower = MAX_POWER * rbTicks / maxTicks;
+            double dt = timer.seconds();
+            if (dt == 0)
+            {
+                dt = 0.01;
+            }
+            timer.reset();
 
-            setMotorPower(lfPower, rfPower, lbPower, rbPower);
+            if (distance > 0.0)
+            {
+
+            }
         }
-
-        while (motorsAreBusy()) { }
-
-        stopMotors();
-        setRunUsingEncoderMode();
     }
 }

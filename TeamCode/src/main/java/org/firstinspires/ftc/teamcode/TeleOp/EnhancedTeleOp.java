@@ -84,8 +84,6 @@ public class EnhancedTeleOp extends LinearOpMode
         lb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         rb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
 
-        telemetry.addData("Status", "Initializing IMU ...");
-        telemetry.update();
         imu = hardwareMap.get(IMU.class, "imu");
         RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
         RevHubOrientationOnRobot.UsbFacingDirection  usbDirection  = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
@@ -93,15 +91,11 @@ public class EnhancedTeleOp extends LinearOpMode
         IMU.Parameters imuParams = new IMU.Parameters(orientationOnRobot);
         imu.initialize(imuParams);
         imu.resetYaw(); //careful here, might wanna store inital heading from autoOp first
-        telemetry.addData("Status", "IMU Initialized");
-        telemetry.update();
 
-        helper = new MotorControlHelper(lf, rf, lb, rb);
-        telemetry.addData("Status", "Helper initialized");
-        telemetry.update();
+        //helper = new MotorControlHelper(this);
         waitForStart();
 
-        helper.translate(HEADING, DISTANCE);
+        //helper.translate(HEADING, DISTANCE);
 
         timer.reset();
 
@@ -222,7 +216,7 @@ public class EnhancedTeleOp extends LinearOpMode
                 rb.setPower(rbOutput);
             }
 
-            /*
+
             telemetry.addData("Dead Zone", INPUT_DEADZONE_ON);
             telemetry.addData("Input Scaling", INPUT_SCALING_ON);
             telemetry.addData("Input Smoothing", INPUT_SMOOTHING_ON);
@@ -230,7 +224,7 @@ public class EnhancedTeleOp extends LinearOpMode
             telemetry.addData("PIDF", PIDF_ON);
             telemetry.addData("Accel Limiting", ACCEL_LIMITING_ON);
             telemetry.update();
-             */
+
         }
 
     }
