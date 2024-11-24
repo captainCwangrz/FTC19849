@@ -1,18 +1,15 @@
 package org.firstinspires.ftc.teamcode.TeleOp;
 
-import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
-
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
-import org.firstinspires.ftc.teamcode.Autonomous.MotorControlHelper;
 
-@Config
 @TeleOp(name = "EnhancedTeleOp", group = "Enhanced")
 public class EnhancedTeleOp extends LinearOpMode
 {
@@ -21,55 +18,76 @@ public class EnhancedTeleOp extends LinearOpMode
     DcMotorEx lb;
     DcMotorEx rb;
 
+    DcMotorEx lLift;
+    DcMotorEx rLift;
+
+    Servo lClaw;
+    Servo rClaw;
+    Servo elbow;
+
     IMU imu;
 
-    boolean INPUT_DEADZONE_ON = false;
+    final RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
+    final RevHubOrientationOnRobot.UsbFacingDirection  usbDirection  = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+
     boolean INPUT_SCALING_ON = false;
     boolean INPUT_SMOOTHING_ON = false;
     boolean FIELD_CENTRIC_ON = false;
     boolean ACCEL_LIMITING_ON = false;
-    boolean PIDF_ON = false;
 
-
-    final double DEADZONE = 0.02;
-    final double RAMP_RATE = 1.0;
-    final double MAX_ACCEL = 1.0;
+    double DEADZONE = 0.02;
+    double RAMP_RATE = 1.0;
+    double MAX_ACCEL = 1.0;
+    double maxTicksLimiter = 0.6;
+    double maxTicksPerSecond;
 
     double prevY = 0;
     double prevX = 0;
     double prevR = 0;
 
+    double filteredYaw = 0.0;
+    double alpha = 0.2;
+
+    final double maxRPM = 312;
+    final double TPR = 537.7;
+    final double gearing = 19.2;
+
+    double lClawPos = 0.5;
+    double rClawPos = 0.5;
+    double elbowPos = 0.5;
+    double clawIncrement = 0.002;
+    double maxElbowIncrement = 0.006;
+
     ElapsedTime timer = new ElapsedTime();
 
-    double maxTicksPerSecond;
-
-    MotorControlHelper helper;
-    public static double HEADING = 0.0;
-    public static double DISTANCE = 1.5;
-
-    @Override
-    public void runOpMode()
+    private void initMotors()
     {
         lf = hardwareMap.get(DcMotorEx.class, "lf");
         rf = hardwareMap.get(DcMotorEx.class, "rf");
         lb = hardwareMap.get(DcMotorEx.class, "lb");
         rb = hardwareMap.get(DcMotorEx.class, "rb");
+        lLift = hardwareMap.get(DcMotorEx.class, "llift");
+        rLift = hardwareMap.get(DcMotorEx.class, "rlift");
 
         //GoBilda 5203-2402-0019
-        lf.getMotorType().setMaxRPM(312);
-        lf.getMotorType().setTicksPerRev(537.7);
-        lf.getMotorType().setGearing(19.2);
-        rf.getMotorType().setMaxRPM(312);
-        rf.getMotorType().setTicksPerRev(537.7);
-        rf.getMotorType().setGearing(19.2);
-        lb.getMotorType().setMaxRPM(312);
-        lb.getMotorType().setTicksPerRev(537.7);
-        lf.getMotorType().setGearing(19.2);
-        rb.getMotorType().setMaxRPM(312);
-        rb.getMotorType().setTicksPerRev(537.7);
-        rb.getMotorType().setGearing(19.2);
-
-        maxTicksPerSecond = lf.getMotorType().getAchieveableMaxTicksPerSecond();
+        lf.getMotorType().setMaxRPM(maxRPM);
+        lf.getMotorType().setTicksPerRev(TPR);
+        lf.getMotorType().setGearing(gearing);
+        rf.getMotorType().setMaxRPM(maxRPM);
+        rf.getMotorType().setTicksPerRev(TPR);
+        rf.getMotorType().setGearing(gearing);
+        lb.getMotorType().setMaxRPM(maxRPM);
+        lb.getMotorType().setTicksPerRev(TPR);
+        lf.getMotorType().setGearing(gearing);
+        rb.getMotorType().setMaxRPM(maxRPM);
+        rb.getMotorType().setTicksPerRev(TPR);
+        rb.getMotorType().setGearing(gearing);
+        lLift.getMotorType().setMaxRPM(maxRPM);
+        lLift.getMotorType().setTicksPerRev(TPR);
+        lLift.getMotorType().setGearing(gearing);
+        rLift.getMotorType().setMaxRPM(maxRPM);
+        rLift.getMotorType().setTicksPerRev(TPR);
+        rLift.getMotorType().setGearing(gearing);
 
         lf.setDirection(DcMotorEx.Direction.REVERSE);
         lb.setDirection(DcMotorEx.Direction.REVERSE);
@@ -78,25 +96,60 @@ public class EnhancedTeleOp extends LinearOpMode
         rf.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         lb.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         rb.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        lLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        rLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+
+        resetEncoders();
+    }
+
+    private void resetEncoders()
+    {
+        lf.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        rf.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        lb.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        rb.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        lLift.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        rLift.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
 
         lf.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         rf.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         lb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         rb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        lLift.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        rLift.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+    }
 
+    private void initServos()
+    {
+        lClaw = hardwareMap.get(Servo.class, "lclaw");
+        rClaw = hardwareMap.get(Servo.class, "rclaw");
+        elbow = hardwareMap.get(Servo.class, "elbow");
+
+        lClaw.setPosition(lClawPos);
+        rClaw.setPosition(rClawPos);
+        elbow.setPosition(elbowPos);
+    }
+
+    private void initIMU()
+    {
         imu = hardwareMap.get(IMU.class, "imu");
-        RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
-        RevHubOrientationOnRobot.UsbFacingDirection  usbDirection  = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
         RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
         IMU.Parameters imuParams = new IMU.Parameters(orientationOnRobot);
         imu.initialize(imuParams);
         imu.resetYaw(); //careful here, might wanna store inital heading from autoOp first
+    }
 
-        //helper = new MotorControlHelper(this);
+    @Override
+    public void runOpMode()
+    {
+        initMotors();
+        maxTicksPerSecond = lf.getMotorType().getAchieveableMaxTicksPerSecond();
+
+        initServos();
+
+        initIMU();
+
         waitForStart();
-
-        //helper.translate(HEADING, DISTANCE);
-
         timer.reset();
 
         while (opModeIsActive())
@@ -104,11 +157,6 @@ public class EnhancedTeleOp extends LinearOpMode
             double loopTime = timer.seconds();
             timer.reset();
 
-            if (gamepad1.a)
-            {
-                INPUT_DEADZONE_ON = !INPUT_DEADZONE_ON;
-                while (gamepad1.a){}
-            }
             if (gamepad1.b)
             {
                 INPUT_SCALING_ON = !INPUT_SCALING_ON;
@@ -129,28 +177,29 @@ public class EnhancedTeleOp extends LinearOpMode
                 ACCEL_LIMITING_ON = !ACCEL_LIMITING_ON;
                 while (gamepad1.left_bumper){}
             }
-            if (gamepad1.right_bumper)
-            {
-                PIDF_ON = !PIDF_ON;
-                while (gamepad1.right_bumper){}
-            }
 
             double y = -gamepad1.left_stick_y;
             double x = gamepad1.left_stick_x;
             double r = gamepad1.right_stick_x;
 
-            if (INPUT_DEADZONE_ON)
-            {
-                y = applyDeadzone(y);
-                x = applyDeadzone(x);
-                r = applyDeadzone(r);
-            }
+            double lift = -gamepad2.left_stick_y;
+            double arm = -gamepad2.left_stick_y;
+            boolean openClaw = gamepad2.x;
+            boolean closeClaw = gamepad2.b;
+
+            y = applyDeadzone(y);
+            x = applyDeadzone(x);
+            r = applyDeadzone(r);
+            lift = applyDeadzone(lift);
+            arm = applyDeadzone(arm);
 
             if (INPUT_SCALING_ON)
             {
                 y = scaleInput(y);
                 x = scaleInput(x);
                 r = scaleInput(r);
+                lift = scaleInput(lift);
+                arm = scaleInput(arm);
             }
 
             if (INPUT_SMOOTHING_ON)
@@ -189,44 +238,43 @@ public class EnhancedTeleOp extends LinearOpMode
                 rbOutput /= maxOutput;
             }
 
-            if (PIDF_ON)
+            if (ACCEL_LIMITING_ON)
             {
-                lfOutput *= maxTicksPerSecond;
-                rfOutput *= maxTicksPerSecond;
-                lbOutput *= maxTicksPerSecond;
-                rbOutput *= maxTicksPerSecond;
-
-                lf.setVelocity(lfOutput);
-                rf.setVelocity(rfOutput);
-                lb.setVelocity(lbOutput);
-                rb.setVelocity(rbOutput);
-            }
-            else
-            {
-                if (ACCEL_LIMITING_ON)
-                {
-                    lfOutput = limitAcceleration(lfOutput, lf.getPower(), loopTime);
-                    rfOutput = limitAcceleration(rfOutput, rf.getPower(), loopTime);
-                    lbOutput = limitAcceleration(lbOutput, lb.getPower(), loopTime);
-                    rbOutput = limitAcceleration(rbOutput, rb.getPower(), loopTime);
-                }
-                lf.setPower(lfOutput);
-                rf.setPower(rfOutput);
-                lb.setPower(lbOutput);
-                rb.setPower(rbOutput);
+                lfOutput = limitAcceleration(lfOutput, lf.getPower(), loopTime);
+                rfOutput = limitAcceleration(rfOutput, rf.getPower(), loopTime);
+                lbOutput = limitAcceleration(lbOutput, lb.getPower(), loopTime);
+                rbOutput = limitAcceleration(rbOutput, rb.getPower(), loopTime);
             }
 
+            if (openClaw)
+            {
+                lClawPos += clawIncrement;
+                rClawPos -= clawIncrement;
+            }
+            if (closeClaw)
+            {
+                rClawPos += clawIncrement;
+                lClawPos -= clawIncrement;
+            }
+            elbowPos += arm * maxElbowIncrement;
 
-            telemetry.addData("Dead Zone", INPUT_DEADZONE_ON);
+            lClaw.setPosition(lClawPos);
+            rClaw.setPosition(rClawPos);
+            elbow.setPosition(elbowPos);
+
+            lf.setVelocity(lfOutput * maxTicksPerSecond * maxTicksLimiter);
+            rf.setVelocity(rfOutput * maxTicksPerSecond * maxTicksLimiter);
+            lb.setVelocity(lbOutput * maxTicksPerSecond * maxTicksLimiter);
+            rb.setVelocity(rbOutput * maxTicksPerSecond * maxTicksLimiter);
+            lLift.setVelocity(lift * maxTicksPerSecond);
+            rLift.setVelocity(lift * maxTicksPerSecond);
+
             telemetry.addData("Input Scaling", INPUT_SCALING_ON);
             telemetry.addData("Input Smoothing", INPUT_SMOOTHING_ON);
             telemetry.addData("Field Centric", FIELD_CENTRIC_ON);
-            telemetry.addData("PIDF", PIDF_ON);
             telemetry.addData("Accel Limiting", ACCEL_LIMITING_ON);
             telemetry.update();
-
         }
-
     }
 
     private double applyDeadzone(double input)
@@ -280,6 +328,8 @@ public class EnhancedTeleOp extends LinearOpMode
     private double getHeadingRadian()
     {
         YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
-        return angles.getYaw(AngleUnit.RADIANS);
+        double newYaw = angles.getYaw(AngleUnit.RADIANS);
+        filteredYaw = alpha * newYaw + (1 - alpha) * filteredYaw;
+        return filteredYaw;
     }
 }
