@@ -30,27 +30,27 @@ public class EnhancedTeleOp extends LinearOpMode
     final RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
     final RevHubOrientationOnRobot.UsbFacingDirection  usbDirection  = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
 
-    boolean INPUT_SCALING_ON = false;
-    boolean INPUT_SMOOTHING_ON = false;
-    boolean FIELD_CENTRIC_ON = false;
-    boolean ACCEL_LIMITING_ON = false;
-
     double DEADZONE = 0.02;
-    double RAMP_RATE = 1.0;
-    double MAX_ACCEL = 1.0;
-    double maxTicksLimiter = 0.6;
-    double maxTicksPerSecond;
 
-    double prevY = 0;
-    double prevX = 0;
-    double prevR = 0;
+    boolean INPUT_SCALING_ON = false;
 
-    double filteredYaw = 0.0;
-    double alpha = 0.2;
+    boolean INPUT_SMOOTHING_ON = false;
+    double dynamicEmaAlpha;
+    double prevMagnitude = 0.0;
+
+    boolean FIELD_CENTRIC_ON = false;
+
+    boolean ACCEL_LIMITING_ON = false;
+    double dynamicMaxAccel;
 
     final double maxRPM = 312;
     final double TPR = 537.7;
     final double gearing = 19.2;
+    double maxTicksLimiter = 0.6;
+    double maxTicksPerSecond;
+
+    double filteredYaw = 0.0;
+    double alpha = 0.2;
 
     double lClawPos = 0.5;
     double rClawPos = 0.5;
@@ -202,15 +202,39 @@ public class EnhancedTeleOp extends LinearOpMode
                 arm = scaleInput(arm);
             }
 
+            double magnitude = Math.sqrt(y * y + x * x + r * r);
+            double directionX = (magnitude != 0) ? x / magnitude : 0;
+            double directionY = (magnitude != 0) ? y / magnitude : 0;
+            double directionR = (magnitude != 0) ? r / magnitude : 0;
+            boolean suddenDirectionChange = Math.abs(magnitude - prevMagnitude) > 0.5;
+            if (suddenDirectionChange)
+            {
+                dynamicMaxAccel = 3.0;
+                dynamicEmaAlpha = 0.9;
+            }
+            else
+            {
+                if (magnitude < 0.3)
+                {
+                    dynamicMaxAccel = 0.5;
+                    dynamicEmaAlpha = 0.3;
+                }
+                else
+                {
+                    dynamicMaxAccel = 1.5;
+                    dynamicEmaAlpha = 0.5;
+                }
+            }
+
             if (INPUT_SMOOTHING_ON)
             {
-                y = rampInput(y, prevY, loopTime);
-                x = rampInput(x, prevX, loopTime);
-                r = rampInput(r, prevR, loopTime);
+                magnitude = dynamicEmaAlpha * magnitude + (1 - dynamicEmaAlpha) * prevMagnitude;
             }
-            prevY = y;
-            prevX = x;
-            prevR = r;
+            y = magnitude * directionY;
+            x = magnitude * directionX;
+            r = magnitude * directionR;
+            prevMagnitude = magnitude;
+
 
             if (FIELD_CENTRIC_ON)
             {
@@ -238,12 +262,18 @@ public class EnhancedTeleOp extends LinearOpMode
                 rbOutput /= maxOutput;
             }
 
+
+            lfOutput = lfOutput * maxTicksPerSecond * maxTicksLimiter;
+            rfOutput = rfOutput * maxTicksPerSecond * maxTicksLimiter;
+            lbOutput = lbOutput * maxTicksPerSecond * maxTicksLimiter;
+            rbOutput = rbOutput * maxTicksPerSecond * maxTicksLimiter;
+            lift = lift * maxTicksPerSecond;
             if (ACCEL_LIMITING_ON)
             {
-                lfOutput = limitAcceleration(lfOutput, lf.getPower(), loopTime);
-                rfOutput = limitAcceleration(rfOutput, rf.getPower(), loopTime);
-                lbOutput = limitAcceleration(lbOutput, lb.getPower(), loopTime);
-                rbOutput = limitAcceleration(rbOutput, rb.getPower(), loopTime);
+                lfOutput = limitAcceleration(lfOutput, lf.getVelocity(), loopTime, dynamicMaxAccel);
+                rfOutput = limitAcceleration(rfOutput, rf.getVelocity(), loopTime, dynamicMaxAccel);
+                lbOutput = limitAcceleration(lbOutput, lb.getVelocity(), loopTime, dynamicMaxAccel);
+                rbOutput = limitAcceleration(rbOutput, rb.getVelocity(), loopTime, dynamicMaxAccel);
             }
 
             if (openClaw)
@@ -262,15 +292,14 @@ public class EnhancedTeleOp extends LinearOpMode
             rClaw.setPosition(rClawPos);
             elbow.setPosition(elbowPos);
 
-            lf.setVelocity(lfOutput * maxTicksPerSecond * maxTicksLimiter);
-            rf.setVelocity(rfOutput * maxTicksPerSecond * maxTicksLimiter);
-            lb.setVelocity(lbOutput * maxTicksPerSecond * maxTicksLimiter);
-            rb.setVelocity(rbOutput * maxTicksPerSecond * maxTicksLimiter);
-            lLift.setVelocity(lift * maxTicksPerSecond);
-            rLift.setVelocity(lift * maxTicksPerSecond);
+            lf.setVelocity(lfOutput);
+            rf.setVelocity(rfOutput);
+            lb.setVelocity(lbOutput);
+            rb.setVelocity(rbOutput);
+            lLift.setVelocity(lift);
+            rLift.setVelocity(lift);
 
             telemetry.addData("Input Scaling", INPUT_SCALING_ON);
-            telemetry.addData("Input Smoothing", INPUT_SMOOTHING_ON);
             telemetry.addData("Field Centric", FIELD_CENTRIC_ON);
             telemetry.addData("Accel Limiting", ACCEL_LIMITING_ON);
             telemetry.update();
@@ -287,26 +316,7 @@ public class EnhancedTeleOp extends LinearOpMode
         return Math.pow(input, 3);
     }
 
-    private double rampInput(double target, double prev, double loopTime)
-    {
-        if (Math.abs(target) < DEADZONE)
-        {
-            return 0.0;
-        }
-        double maxDelta = RAMP_RATE * loopTime;
-        double delta = target-prev;
-        if (delta > maxDelta)
-        {
-            delta = maxDelta;
-        }
-        else if (delta < -maxDelta)
-        {
-            delta = -maxDelta;
-        }
-        return prev + delta;
-    }
-
-    private double limitAcceleration(double target, double current, double loopTime)
+    private double limitAcceleration(double target, double current, double loopTime, double MAX_ACCEL)
     {
         if (Math.abs(target) < DEADZONE)
         {
