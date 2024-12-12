@@ -6,6 +6,7 @@ public class PIDFController
     double kP, kI, kD, kF;
     double integral;
     double previousError;
+    double setpoint;
 
     public PIDFController(double kP, double kI, double kD, double kF)
     {
@@ -15,9 +16,15 @@ public class PIDFController
         this.kF = kF;
         this.integral = 0.0;
         this.previousError = 0.0;
+        this.setpoint = 0.0;
     }
 
-    public double calculate(double setpoint, double measured, double dt)
+    public void setSetpoint(double setpoint)
+    {
+        this.setpoint = setpoint;
+    }
+
+    public double calculate( double measured, double dt)
     {
         double error = setpoint - measured;
         integral += error * dt;
