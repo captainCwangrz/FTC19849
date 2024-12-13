@@ -1,14 +1,12 @@
 package org.firstinspires.ftc.teamcode.Autonomous;
 
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.PIDFCoefficients;
-import com.qualcomm.robotcore.util.ElapsedTime;
-
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 @TeleOp(name = "DistanceControlTest", group = "Testing")
 public class DistanceControlTest extends LinearOpMode
 {
@@ -20,6 +18,8 @@ public class DistanceControlTest extends LinearOpMode
     IMU imu;
     RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
     RevHubOrientationOnRobot.UsbFacingDirection  usbDirection  = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+    double filteredYaw = 0.0;
+    double alpha = 0.2;
 
     double maxRPM = 312;
     double gearing = 19.2;
@@ -33,21 +33,29 @@ public class DistanceControlTest extends LinearOpMode
     @Override
     public void runOpMode()
     {
-        initIMU();
         initMotors();
+        initIMU();
 
         waitForStart();
 
         while (opModeIsActive())
         {
-            translate(0, 1, 0.4);
-            sleep(3000);
-            translate(180, 1, 0.4);
-            sleep(3000);
-            translate(-45, 0.5, 0.4);
-            sleep(3000);
-            translate(135, 0.5, 0.4);
-            break;
+            if (gamepad1.y)
+            {
+                translate(40,0.65,0.6);
+                translate(90,0.565,0.6);
+            }
+            if (gamepad1.a)
+            {
+                translate(180,1,0.6);
+            }
+            telemetry.addData("Heading:",getHeadingDegrees());
+            telemetry.update();
+            if (gamepad1.x)
+            {
+                rotate(90, 0.2);
+            }
+            idle();
         }
     }
 
@@ -82,12 +90,53 @@ public class DistanceControlTest extends LinearOpMode
         lb.setPower(maxPower);
         rb.setPower(maxPower);
 
-        while ((lf.isBusy() || rf.isBusy() || lb.isBusy() || rb.isBusy()))
+        while ((lf.isBusy() || rf.isBusy() || lb.isBusy() || rb.isBusy()) && opModeIsActive())
         {
-
+            int lfRemain = Math.abs(lfTargetTicks - lf.getCurrentPosition());
+            int rfRemain = Math.abs(rfTargetTicks - rf.getCurrentPosition());
+            int lbRemain = Math.abs(lbTargetTicks - lb.getCurrentPosition());
+            int rbRemain = Math.abs(rbTargetTicks - rb.getCurrentPosition());
+            double avgRemain = ticksToMeters((lfRemain + rfRemain + lbRemain + rbRemain) / 4.0);
+            telemetry.addData("avg remain (m)", avgRemain);
+            telemetry.update();
+            if (avgRemain <= 0.03)
+            {
+                break;
+            }
+            idle();
         }
         stopAllMotors();
         resetEncoders();
+    }
+
+    public void rotate(double degrees, double maxPower)
+    {
+        double initialHeading = getHeadingDegrees();
+        double targetHeading = initialHeading - degrees;
+        targetHeading = normalizeAngle(targetHeading);
+
+        while (opModeIsActive())
+        {
+            double currentHeading = getHeadingDegrees();
+            double error = getAngleDifference(targetHeading, currentHeading);
+            double power = error * 0.03;
+            power = Math.max(Math.min(power, maxPower), -maxPower);
+            lf.setPower(-power);
+            rf.setPower(power);
+            lb.setPower(-power);
+            rb.setPower(power);
+            telemetry.addData("Current Heading", currentHeading);
+            telemetry.addData("Target Heading", targetHeading);
+            telemetry.addData("Error", error);
+            telemetry.addData("Power", power);
+            telemetry.update();
+            if (Math.abs(error) <= 5.0)
+            {
+                break;
+            }
+            idle();
+        }
+        stopAllMotors();
     }
 
     private void initMotors()
@@ -120,7 +169,7 @@ public class DistanceControlTest extends LinearOpMode
         rb.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
         resetEncoders();
-        setPIDFCoefficients();
+        setPIDFCoefficients(3,2,0,9,1.5);
     }
 
     private void resetEncoders()
@@ -136,16 +185,16 @@ public class DistanceControlTest extends LinearOpMode
         rb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
     }
 
-    private void setPIDFCoefficients()
+    private void setPIDFCoefficients(double encoderP, double encoderI, double encoderD, double encoderF, double positionP)
     {
-        lf.setVelocityPIDFCoefficients(1.2, 0.2, 0, 11);
-        lf.setPositionPIDFCoefficients(5);
-        rf.setVelocityPIDFCoefficients(1.2, 0.2, 0, 11);
-        rf.setPositionPIDFCoefficients(5);
-        lb.setVelocityPIDFCoefficients(1.2, 0.2, 0, 11);
-        lb.setPositionPIDFCoefficients(5);
-        rb.setVelocityPIDFCoefficients(1.2, 0.2, 0, 11);
-        rb.setPositionPIDFCoefficients(5);
+        lf.setVelocityPIDFCoefficients(encoderP, encoderI, encoderD, encoderF);
+        lf.setPositionPIDFCoefficients(positionP);
+        rf.setVelocityPIDFCoefficients(encoderP, encoderI, encoderD, encoderF);
+        rf.setPositionPIDFCoefficients(positionP);
+        lb.setVelocityPIDFCoefficients(encoderP, encoderI, encoderD, encoderF);
+        lb.setPositionPIDFCoefficients(positionP);
+        rb.setVelocityPIDFCoefficients(encoderP, encoderI, encoderD, encoderF);
+        rb.setPositionPIDFCoefficients(positionP);
     }
 
     private void initIMU()
@@ -157,7 +206,7 @@ public class DistanceControlTest extends LinearOpMode
         imu.resetYaw(); //careful here, might wanna store inital heading from autoOp first
     }
 
-    private double ticksToMeters(int ticks)
+    private double ticksToMeters(double ticks)
     {
         return (ticks / TICKS_PER_REV) * WHEEL_CIRCUMFERENCE;
     }
@@ -173,5 +222,28 @@ public class DistanceControlTest extends LinearOpMode
         rf.setPower(0);
         lb.setPower(0);
         rb.setPower(0);
+    }
+
+    //Returns current heading [-180,180] where negative degrees is clockwise and vice versa
+    private double getHeadingDegrees()
+    {
+        YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+        double newYaw = angles.getYaw(AngleUnit.DEGREES);
+        filteredYaw = alpha * newYaw + (1 - alpha) * filteredYaw;
+        return normalizeAngle(filteredYaw);
+    }
+
+    private double normalizeAngle(double angle)
+    {
+        while (angle > 180.0) angle -= 360.0;
+        while (angle <= -180.0) angle += 360.0;
+        return angle;
+    }
+
+    private double getAngleDifference(double target, double current)
+    {
+        double difference = target - current;
+        difference = normalizeAngle(difference);
+        return difference;
     }
 }
