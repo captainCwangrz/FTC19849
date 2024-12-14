@@ -5,6 +5,8 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.hardware.Servo;
+
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 @TeleOp(name = "DistanceControlTest", group = "Testing")
@@ -14,6 +16,14 @@ public class DistanceControlTest extends LinearOpMode
     DcMotorEx rf;
     DcMotorEx lb;
     DcMotorEx rb;
+    DcMotorEx lLift;
+
+    Servo lClaw;
+    Servo rClaw;
+    Servo elbow;
+    double lClawPos = 0.5;
+    double rClawPos = 0.5;
+    double elbowPos = 0.5;
 
     IMU imu;
     RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
@@ -34,6 +44,7 @@ public class DistanceControlTest extends LinearOpMode
     public void runOpMode()
     {
         initMotors();
+        initServos();
         initIMU();
 
         waitForStart();
@@ -139,6 +150,52 @@ public class DistanceControlTest extends LinearOpMode
         stopAllMotors();
     }
 
+    public void clawClamp()
+    {
+        rClawPos = 0.83;
+        lClawPos = 0.17;
+        lClaw.setPosition(lClawPos);
+        rClaw.setPosition(rClawPos);
+    }
+
+    public void clawOpen()
+    {
+        rClawPos = 0.4;
+        lClawPos = 0.6;
+        lClaw.setPosition(lClawPos);
+        rClaw.setPosition(rClawPos);
+    }
+
+    public void elbowGrab()
+    {
+        elbow.setPosition(elbowPos);
+    }
+
+    public void elbowPick()
+    {
+        elbow.setPosition(elbowPos);
+    }
+
+    public void elbowHang()
+    {
+        elbow.setPosition(elbowPos);
+    }
+
+    public void liftPrep()
+    {
+
+    }
+
+    public void liftHang()
+    {
+
+    }
+
+    public void armRest()
+    {
+
+    }
+
     private void initMotors()
     {
         lf = hardwareMap.get(DcMotorEx.class, "lf");
@@ -159,6 +216,9 @@ public class DistanceControlTest extends LinearOpMode
         rb.getMotorType().setMaxRPM(maxRPM);
         rb.getMotorType().setTicksPerRev(TICKS_PER_REV);
         rb.getMotorType().setGearing(gearing);
+        lLift.getMotorType().setMaxRPM(maxRPM);
+        lLift.getMotorType().setTicksPerRev(TICKS_PER_REV);
+        lLift.getMotorType().setGearing(gearing);
 
         lf.setDirection(DcMotorEx.Direction.REVERSE);
         lb.setDirection(DcMotorEx.Direction.REVERSE);
@@ -167,6 +227,7 @@ public class DistanceControlTest extends LinearOpMode
         rf.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         lb.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         rb.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        lLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
         resetEncoders();
         setPIDFCoefficients(3,2,0,9,1.5);
@@ -178,11 +239,13 @@ public class DistanceControlTest extends LinearOpMode
         rf.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
         lb.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
         rb.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        lLift.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
 
         lf.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         rf.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         lb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         rb.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        lLift.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
     }
 
     private void setPIDFCoefficients(double encoderP, double encoderI, double encoderD, double encoderF, double positionP)
@@ -195,6 +258,17 @@ public class DistanceControlTest extends LinearOpMode
         lb.setPositionPIDFCoefficients(positionP);
         rb.setVelocityPIDFCoefficients(encoderP, encoderI, encoderD, encoderF);
         rb.setPositionPIDFCoefficients(positionP);
+    }
+
+    private void initServos()
+    {
+        lClaw = hardwareMap.get(Servo.class, "lclaw");
+        rClaw = hardwareMap.get(Servo.class, "rclaw");
+        elbow = hardwareMap.get(Servo.class, "elbow");
+
+        lClaw.setPosition(lClawPos);
+        rClaw.setPosition(rClawPos);
+        elbow.setPosition(elbowPos);
     }
 
     private void initIMU()

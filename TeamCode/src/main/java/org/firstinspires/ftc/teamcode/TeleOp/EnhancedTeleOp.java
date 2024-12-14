@@ -264,7 +264,6 @@ public class EnhancedTeleOp extends LinearOpMode
                 rbOutput /= maxOutput;
             }
 
-
             lfOutput = lfOutput * maxTicksPerSecond * maxTicksLimiter;
             rfOutput = rfOutput * maxTicksPerSecond * maxTicksLimiter;
             lbOutput = lbOutput * maxTicksPerSecond * maxTicksLimiter;
