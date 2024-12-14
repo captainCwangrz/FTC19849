@@ -18,7 +18,6 @@ public class EnhancedTeleOp extends LinearOpMode
     DcMotorEx rf;
     DcMotorEx lb;
     DcMotorEx rb;
-
     DcMotorEx lLift;
     DcMotorEx rLift;
 
@@ -40,9 +39,6 @@ public class EnhancedTeleOp extends LinearOpMode
 
     boolean FIELD_CENTRIC_ON = false;
 
-    boolean ACCEL_LIMITING_ON = false;
-    double dynamicMaxAccel;
-
     boolean REVERSE_ELBOW = false;
     boolean PAD2_ROTATE = false;
 
@@ -60,8 +56,6 @@ public class EnhancedTeleOp extends LinearOpMode
     double elbowPos = 0.5;
     double clawIncrement = 0.003;
     double maxElbowIncrement = 0.006;
-
-    ElapsedTime timer = new ElapsedTime();
 
     private void initMotors()
     {
@@ -102,6 +96,7 @@ public class EnhancedTeleOp extends LinearOpMode
         lLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         rLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
+        maxTicksPerSecond = lf.getMotorType().getAchieveableMaxTicksPerSecond();
         resetEncoders();
     }
 
@@ -139,27 +134,20 @@ public class EnhancedTeleOp extends LinearOpMode
         RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
         IMU.Parameters imuParams = new IMU.Parameters(orientationOnRobot);
         imu.initialize(imuParams);
-        imu.resetYaw(); //careful here, might wanna store inital heading from autoOp first
+        imu.resetYaw(); //For TeleOp practice only. !!!!!!!!!!!COMMENT OUT FOR CONTEST!!!!!!!!!
     }
 
     @Override
     public void runOpMode()
     {
         initMotors();
-        maxTicksPerSecond = lf.getMotorType().getAchieveableMaxTicksPerSecond();
-
         initServos();
-
         initIMU();
 
         waitForStart();
-        timer.reset();
 
         while (opModeIsActive())
         {
-            double loopTime = timer.seconds();
-            timer.reset();
-
             if (gamepad1.y)
             {
                 FIELD_CENTRIC_ON = !FIELD_CENTRIC_ON;
@@ -211,19 +199,16 @@ public class EnhancedTeleOp extends LinearOpMode
             boolean suddenDirectionChange = Math.abs(magnitude - prevMagnitude) > 0.5;
             if (suddenDirectionChange)
             {
-                dynamicMaxAccel = 3.0;
                 dynamicEmaAlpha = 0.9;
             }
             else
             {
                 if (magnitude < 0.3)
                 {
-                    dynamicMaxAccel = 0.5;
                     dynamicEmaAlpha = 0.3;
                 }
                 else
                 {
-                    dynamicMaxAccel = 1.5;
                     dynamicEmaAlpha = 0.5;
                 }
             }
@@ -236,7 +221,6 @@ public class EnhancedTeleOp extends LinearOpMode
             x = magnitude * directionX;
             r = magnitude * directionR;
             prevMagnitude = magnitude;
-
 
             if (FIELD_CENTRIC_ON)
             {
@@ -269,13 +253,6 @@ public class EnhancedTeleOp extends LinearOpMode
             lbOutput = lbOutput * maxTicksPerSecond * maxTicksLimiter;
             rbOutput = rbOutput * maxTicksPerSecond * maxTicksLimiter;
             lift = lift * maxTicksPerSecond;
-            if (ACCEL_LIMITING_ON)
-            {
-                lfOutput = limitAcceleration(lfOutput, lf.getVelocity(), loopTime, dynamicMaxAccel);
-                rfOutput = limitAcceleration(rfOutput, rf.getVelocity(), loopTime, dynamicMaxAccel);
-                lbOutput = limitAcceleration(lbOutput, lb.getVelocity(), loopTime, dynamicMaxAccel);
-                rbOutput = limitAcceleration(rbOutput, rb.getVelocity(), loopTime, dynamicMaxAccel);
-            }
 
             if (openClaw)
             {
@@ -319,9 +296,8 @@ public class EnhancedTeleOp extends LinearOpMode
             rLift.setVelocity(lift);
 
             telemetry.addData("Field Centric", FIELD_CENTRIC_ON);
-            telemetry.addData("y", y);
-            telemetry.addData("x", x);
-            telemetry.addData("r", r);
+            telemetry.addData("elbow pos",elbowPos);
+            telemetry.addData("lift encoder", lLift.getCurrentPosition());
             telemetry.update();
         }
     }
@@ -334,25 +310,6 @@ public class EnhancedTeleOp extends LinearOpMode
     private double scaleInput(double input)
     {
         return Math.pow(input, 3);
-    }
-
-    private double limitAcceleration(double target, double current, double loopTime, double MAX_ACCEL)
-    {
-        if (Math.abs(target) < DEADZONE)
-        {
-            return 0.0;
-        }
-        double maxDelta = MAX_ACCEL * loopTime;
-        double delta = target - current;
-        if (delta > maxDelta)
-        {
-            delta = maxDelta;
-        }
-        else if (delta < -maxDelta)
-        {
-            delta = -maxDelta;
-        }
-        return current + delta;
     }
 
     private double getHeadingRadian()
